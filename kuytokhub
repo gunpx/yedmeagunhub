@@ -1,0 +1,501 @@
+-- AutoFarm Loader + Original Script (ไม่แก้เนื้อหาภายในของผู้ใช้)
+-- วางไฟล์นี้เป็น AutoFarm.lua แล้วอัปไปที่ raw.githubusercontent.com/<user>/<repo>/main/AutoFarm.lua
+-- เรียกด้วย: loadstring(game:HttpGet("https://raw.githubusercontent.com/<user>/<repo>/main/AutoFarm.lua"))()
+
+-- ===== Loader (ตรวจสอบ/ลบ GUI เก่า / รอเกมโหลด) =====
+task.spawn(function()
+    -- รอเกมโหลดเสร็จ
+    if not game:IsLoaded() then
+        repeat task.wait() until game:IsLoaded()
+    end
+end)
+-- ลบ GUI เก่าแบบปลอดภัย
+pcall(function()
+    local Players = game:GetService("Players")
+    local plr = Players.LocalPlayer
+    if plr and plr:FindFirstChild("PlayerGui") then
+        for _, g in ipairs(plr.PlayerGui:GetChildren()) do
+            -- ลบทุก GUI ที่ชื่อใกล้เคียงกับ UI เก่า (ครอบคลุมไว้)
+            if g:IsA("ScreenGui") then
+                if g.Name == "AizenFarmUI" or g.Name == "BossFarmUI" or g.Name == "KuyUI" then
+                    pcall(function() g:Destroy() end)
+                end
+            end
+        end
+    end
+end)
+
+-- ห่อการรันสคริปต์ของคุณใน pcall เพื่อไม่ให้ error หยุดการทำงานโดยสิ้นเชิง
+local function run_user_script()
+    -- === BEGIN USER SCRIPT (อย่าแก้ข้างใน) ===
+--// ⚔️ AutoFarm Aizen + AutoZoom + AutoHaki + AutoWeapon + BossCheck ⚔️
+--// by กัน
+
+--===[ Settings ]===--
+local QUEST_CFRAME = CFrame.new(-415.932373, 3.96696687, -709.392212, -0.864932775, 0, -0.501887977, 0, 1, 0, 0.501887977, 0, -0.864932775)
+local ISLAND = "Huecomundo"
+local Weapon = "Dual Dagger" -- ชื่ออาวุธของกัน
+local Delay = 0.3 -- เวลาหน่วงระหว่างใช้แต่ละสกิล
+
+--===[ Services ]===--
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local player = Players.LocalPlayer
+local Remotes = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Serverside")
+local camera = workspace.CurrentCamera
+
+--===[ Global States ]===--
+getgenv().AutoZoom = false
+getgenv().AutoAizen = false
+
+--===[ UI Setup ]===--
+local gui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
+gui.Name = "AizenFarmUI"
+gui.ResetOnSpawn = false
+
+local frame = Instance.new("Frame", gui)
+frame.Size = UDim2.new(0, 220, 0, 105)
+frame.Position = UDim2.new(0.8, 0, 0.55, 0)
+frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+frame.BorderSizePixel = 0
+frame.BackgroundTransparency = 0.1
+frame.Active = true
+frame.Draggable = true
+
+local function makeButton(name, order)
+local btn = Instance.new("TextButton", frame)
+btn.Size = UDim2.new(1, -20, 0, 40)
+btn.Position = UDim2.new(0, 10, 0, (order - 1) * 45 + 10)
+btn.Text = name
+btn.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+btn.TextColor3 = Color3.new(1, 1, 1)
+btn.Font = Enum.Font.GothamBold
+btn.TextSize = 16
+btn.AutoButtonColor = true
+btn.BorderSizePixel = 0
+return btn
+end
+
+local zoomBtn = makeButton("Auto Zoom ❌", 1)
+local aizenBtn = makeButton("Auto Aizen ❌", 2)
+
+--===[ HoldDuration 0 (Instant Prompt) ]===--
+for _, obj in pairs(workspace:GetDescendants()) do
+if obj:IsA("ProximityPrompt") then
+obj.HoldDuration = 0
+end
+end
+workspace.DescendantAdded:Connect(function(obj)
+if obj:IsA("ProximityPrompt") then
+obj.HoldDuration = 0
+end
+end)
+
+--===[ 🌀 Auto Haki (Every 1 Second) ]===--
+task.spawn(function()
+while task.wait(1) do
+pcall(function()
+Remotes:FireServer("Server", "Misc", "Haki", 1)
+end)
+end
+end)
+
+--===[ Equip Weapon ]===--
+local function equipWeapon()
+pcall(function()
+if player.Backpack:FindFirstChild(Weapon) then
+player.Character:WaitForChild("Humanoid"):EquipTool(player.Backpack[Weapon])
+end
+end)
+end
+
+--===[ Helpers ]===--
+local function waitForCharacter()
+local char, hrp, humanoid
+repeat
+char = player.Character or player.CharacterAdded:Wait()
+hrp = char:FindFirstChild("HumanoidRootPart")
+humanoid = char:FindFirstChild("Humanoid")
+task.wait(0.1)
+until hrp and humanoid and humanoid.Health > 0
+return char, hrp, humanoid
+end
+
+local function findBoss(name)
+local bossFolder = workspace.Main.Characters[ISLAND]:FindFirstChild("Boss")
+if bossFolder then
+for _,v in pairs(bossFolder:GetChildren()) do
+if v.Name == name and v:FindFirstChild("HumanoidRootPart") and v:FindFirstChild("Humanoid") and v.Humanoid.Health > 0 then
+return v
+end
+end
+end
+return nil
+end
+
+local function teleportToQuest()
+if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+player.Character.HumanoidRootPart.CFrame = QUEST_CFRAME
+end
+end
+
+--===[ Attack Function ]===--
+local function attack(target)
+pcall(function()
+if target and target:FindFirstChild("HumanoidRootPart") then
+local char, hrp = waitForCharacter()
+local hrpTarget = target.HumanoidRootPart
+task.wait(0.15)
+hrp.CFrame = hrpTarget.CFrame * CFrame.new(0, 0, 5)
+
+-- ถืออาวุธก่อนตี  
+		equipWeapon()  
+
+		-- M1  
+		Remotes:FireServer("Server","Sword","M1s",Weapon,1)  
+		task.wait(Delay)  
+
+		-- Skill1-4  
+		for i = 1, 4 do  
+			Remotes:FireServer("Server","Sword","Skill"..i,Weapon, hrpTarget.Position)  
+			task.wait(Delay)  
+		end  
+	end  
+end)
+
+end
+
+--===[ Auto Loop ]===--
+task.spawn(function()
+while task.wait(0.5) do
+if getgenv().AutoAizen then
+local boss = findBoss("Aizen")
+if boss then
+attack(boss)
+else
+-- ถ้าไม่มีบอสให้วาปกลับไปจุดรับเควส
+teleportToQuest()
+end
+end
+end
+end)
+
+--===[ Auto Zoom ]===--
+RunService.RenderStepped:Connect(function()
+local char = player.Character
+if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Head") then
+if getgenv().AutoZoom then
+camera.CameraType = Enum.CameraType.Scriptable
+local camPos = char.HumanoidRootPart.Position + Vector3.new(0,50,0)
+camera.CFrame = CFrame.new(camPos, char.Head.Position)
+else
+camera.CameraType = Enum.CameraType.Custom
+camera.CameraSubject = char:FindFirstChildOfClass("Humanoid")
+end
+end
+end)
+
+--===[ Buttons Connect ]===--
+zoomBtn.MouseButton1Click:Connect(function()
+getgenv().AutoZoom = not getgenv().AutoZoom
+zoomBtn.Text = "Auto Zoom " .. (getgenv().AutoZoom and "✅" or "❌")
+zoomBtn.BackgroundColor3 = getgenv().AutoZoom and Color3.fromRGB(0,150,0) or Color3.fromRGB(70,70,70)
+end)
+
+aizenBtn.MouseButton1Click:Connect(function()
+getgenv().AutoAizen = not getgenv().AutoAizen
+aizenBtn.Text = "Auto Aizen " .. (getgenv().AutoAizen and "✅" or "❌")
+aizenBtn.BackgroundColor3 = getgenv().AutoAizen and Color3.fromRGB(0,150,0) or Color3.fromRGB(70,70,70)
+end)
+-- อันนี้คือออโต้ตีไอเซน
+
+--// ⚔️ AutoFarm Sukuna + Akaza + AutoZoom + AutoSkill + M1 + AutoHaki + Hold=0 ⚔️
+--// by กัน (เวอร์ชันเพิ่มออโต้ถือดาบ)
+
+--===[ Settings ]===--
+local QUEST_CFRAME = CFrame.new(537.64801, 8.62301731, -542.656372, -0.766061664, 0, 0.642767608, 0, 1, 0, -0.642767608, 0, -0.766061664)
+local ISLAND = "Throne Isle"
+local WEAPON = "Dual Dagger" -- 🔪 ชื่ออาวุธของกัน
+local DELAY = 0.3
+
+--===[ Services ]===--
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local player = Players.LocalPlayer
+local Remotes = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Serverside")
+local camera = workspace.CurrentCamera
+
+--===[ Global States ]===--
+getgenv().AutoZoom = false
+getgenv().AutoSukuna = false
+getgenv().AutoAkaza = false
+
+--===[ UI Setup ]===--
+local gui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
+gui.Name = "BossFarmUI"
+gui.ResetOnSpawn = false
+
+local frame = Instance.new("Frame", gui)
+frame.Size = UDim2.new(0, 220, 0, 160)
+frame.Position = UDim2.new(0.8, 0, 0.55, 0)
+frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+frame.BorderSizePixel = 0
+frame.BackgroundTransparency = 0.1
+frame.Active = true
+frame.Draggable = true
+
+local function makeButton(name, order)
+local btn = Instance.new("TextButton", frame)
+btn.Size = UDim2.new(1, -20, 0, 40)
+btn.Position = UDim2.new(0, 10, 0, (order - 1) * 45 + 10)
+btn.Text = name
+btn.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+btn.TextColor3 = Color3.new(1, 1, 1)
+btn.Font = Enum.Font.GothamBold
+btn.TextSize = 16
+btn.AutoButtonColor = true
+btn.BorderSizePixel = 0
+return btn
+end
+
+local zoomBtn = makeButton("Auto Zoom ❌", 1)
+local sukunaBtn = makeButton("Auto Sukuna ❌", 2)
+local akazaBtn = makeButton("Auto Akaza ❌", 3)
+
+--===[ HoldDuration 0 (Instant Prompt) ]===--
+for _, obj in pairs(workspace:GetDescendants()) do
+if obj:IsA("ProximityPrompt") then
+obj.HoldDuration = 0
+end
+end
+workspace.DescendantAdded:Connect(function(obj)
+if obj:IsA("ProximityPrompt") then
+obj.HoldDuration = 0
+end
+end)
+
+--===[ 🌀 Auto Haki (Every 1 Second) ]===--
+task.spawn(function()
+while task.wait(1) do
+pcall(function()
+Remotes:FireServer("Server", "Misc", "Haki", 1)
+end)
+end
+end)
+
+--===[ Helpers ]===--
+local function waitForCharacter()
+local char, hrp, humanoid
+repeat
+char = player.Character or player.CharacterAdded:Wait()
+hrp = char:FindFirstChild("HumanoidRootPart")
+humanoid = char:FindFirstChild("Humanoid")
+task.wait(0.1)
+until hrp and humanoid and humanoid.Health > 0
+return char, hrp, humanoid
+end
+
+local function findBoss(name)
+local bossFolder = workspace.Main.Characters[ISLAND]:FindFirstChild("Boss")
+if bossFolder then
+for _,v in pairs(bossFolder:GetChildren()) do
+if v.Name == name and v:FindFirstChild("HumanoidRootPart") and v:FindFirstChild("Humanoid") and v.Humanoid.Health > 0 then
+return v
+end
+end
+end
+return nil
+end
+
+local function teleportToQuest()
+if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+player.Character.HumanoidRootPart.CFrame = QUEST_CFRAME
+end
+end
+
+--===[ Equip Weapon Automatically ]===--
+local function equipWeapon()
+pcall(function()
+if not player.Backpack:FindFirstChild(WEAPON) and player.Character:FindFirstChild(WEAPON) then
+return
+end
+local tool = player.Backpack:FindFirstChild(WEAPON)
+if tool then
+player.Character.Humanoid:EquipTool(tool)
+end
+end)
+end
+
+--===[ Attack Function ]===--
+local function attack(target)
+pcall(function()
+if target and target:FindFirstChild("HumanoidRootPart") then
+local char, hrp = waitForCharacter()
+local hrpTarget = target.HumanoidRootPart
+
+equipWeapon() -- ⚔️ ถือดาบอัตโนมัติ  
+
+		task.wait(0.1)  
+		hrp.CFrame = hrpTarget.CFrame * CFrame.new(0, 0, 5)  
+
+		-- M1  
+		Remotes:FireServer("Server","Sword","M1s",WEAPON,1)  
+		task.wait(DELAY)  
+
+		-- Skill1-4  
+		for i = 1, 4 do  
+			Remotes:FireServer("Server","Sword","Skill"..i,WEAPON, hrpTarget.Position)  
+			task.wait(DELAY)  
+		end  
+	end  
+end)
+
+end
+
+--===[ Auto Loop ]===--
+task.spawn(function()
+while task.wait(0.5) do
+if getgenv().AutoSukuna then
+local boss = findBoss("Sukuna")
+if boss then
+attack(boss)
+else
+teleportToQuest()
+end
+end
+if getgenv().AutoAkaza then
+local boss = findBoss("Akaza")
+if boss then
+attack(boss)
+else
+teleportToQuest()
+end
+end
+end
+end)
+
+--===[ Auto Zoom ]===--
+RunService.RenderStepped:Connect(function()
+local char = player.Character
+if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Head") then
+if getgenv().AutoZoom then
+camera.CameraType = Enum.CameraType.Scriptable
+local camPos = char.HumanoidRootPart.Position + Vector3.new(0,50,0)
+camera.CFrame = CFrame.new(camPos, char.Head.Position)
+else
+camera.CameraType = Enum.CameraType.Custom
+camera.CameraSubject = char:FindFirstChildOfClass("Humanoid")
+end
+end
+end)
+
+--===[ Buttons Connect ]===--
+zoomBtn.MouseButton1Click:Connect(function()
+getgenv().AutoZoom = not getgenv().AutoZoom
+zoomBtn.Text = "Auto Zoom " .. (getgenv().AutoZoom and "✅" or "❌")
+zoomBtn.BackgroundColor3 = getgenv().AutoZoom and Color3.fromRGB(0,150,0) or Color3.fromRGB(70,70,70)
+end)
+
+sukunaBtn.MouseButton1Click:Connect(function()
+getgenv().AutoSukuna = not getgenv().AutoSukuna
+sukunaBtn.Text = "Auto Sukuna " .. (getgenv().AutoSukuna and "✅" or "❌")
+sukunaBtn.BackgroundColor3 = getgenv().AutoSukuna and Color3.fromRGB(0,150,0) or Color3.fromRGB(70,70,70)
+end)
+
+akazaBtn.MouseButton1Click:Connect(function()
+getgenv().AutoAkaza = not getgenv().AutoAkaza
+akazaBtn.Text = "Auto Akaza " .. (getgenv().AutoAkaza and "✅" or "❌")
+akazaBtn.BackgroundColor3 = getgenv().AutoAkaza and Color3.fromRGB(0,150,0) or Color3.fromRGB(70,70,70)
+end)
+-- อันนี้คือออโต้เสก สุคุนะกับอาคาซะ ออโต้ตี
+
+task.wait(0.2)  
+	for i=1,4 do  
+		Remotes:FireServer("Server","Sword","Skill"..i,Weapon)  
+		task.wait(Delay)  
+	end  
+	return true  
+end  
+return false
+
+end
+
+--===[ ตรวจ SJW ทุก 10 วิ ]===
+local latestSJW = nil
+task.spawn(function()
+while true do
+local sjwArea = workspace.Main.Characters:FindFirstChild("Rogue Town")
+local sjwBossFolder = sjwArea and sjwArea:FindFirstChild("Boss")
+local sjw = sjwBossFolder and sjwBossFolder:FindFirstChild("Sung Jin Woo")
+
+if sjw and sjw:FindFirstChild("Humanoid") and sjw.Humanoid.Health > 0 then  
+		latestSJW = sjw  
+	else  
+		latestSJW = nil  
+	end  
+	task.wait(10)  
+end
+
+end)
+
+--===[ ระบบ AutoFarm หลัก ]===
+task.spawn(function()
+while true do
+if getgenv().AutoFarmMihawk and getgenv().gx then
+pcall(function()
+local char, hrp = waitForCharacter()
+local mihawk = workspace.Main.Characters["Glacier Isle"].Mihawk:FindFirstChild("Mihawk")
+local sjwBoss = latestSJW
+
+if sjwBoss then  
+				AttackBoss(sjwBoss)  
+			elseif mihawk and mihawk:FindFirstChild("Humanoid") and mihawk.Humanoid.Health > 0 then  
+				AttackBoss(mihawk)  
+			else  
+				hrp.CFrame = deathPosition  
+			end  
+		end)  
+	end  
+	task.wait(0.4)  
+end
+
+end)
+
+--===[ เปิด AutoFarm + AutoZoom ตอนเริ่มต้น ]===
+task.delay(2, function()
+ToggleAutoFarm(true)
+EnableAutoZoom(true)
+end)
+-- อันนี้คือ ออโต้ตีมิฮอคกับซองจินวู
+
+getgenv().auto = true
+while getgenv().auto do
+local args = {
+"Server",
+"Misc",
+"Observation",
+1
+}
+game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("Serverside"):FireServer(unpack(args))
+
+task.wait()
+end
+-- อันนี้คือฮาคิสังเกตุไม่จำกัด
+
+loadstring(game:HttpGet("https://raw.githubusercontent.com/Baeyopll01/Exclusive/main/Kuy.lua"))()
+-- อันนี้คือ UI เพิ่มแค่ฟังชั่นตามที่ผมบอก ห้าม เปลี่ยนอะไรทั้งนั้น และลบ uiอันเก่าออกให้หมด และทำอันใหม่ที่ผมส่งแทน ชื้อฟังชั่นตามที้ผมบอก
+
+-- === END USER SCRIPT ===
+end
+
+-- Execute user's script safely
+local ok, err = pcall(run_user_script)
+if not ok then
+    -- แจ้ง error ให้เห็นใน output เพื่อให้ผู้ใช้ดู (แต่ไม่แก้โค้ดเดิม)
+    warn("AutoFarm script error: "..tostring(err))
+end
+
+-- Loader finished
+print("AutoFarm loader finished.")
